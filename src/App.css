@@ -336,9 +336,9 @@ footer > a { min-height: 44px; display: inline-flex; align-items: center; gap: 8
 .auth-password-toggle:hover { background: color-mix(in oklch, var(--p-taupe) 54%, transparent); }
 .auth-form input:disabled, .auth-password-toggle:disabled, .auth-submit:disabled { cursor: not-allowed; opacity: .58; }
 .auth-submit { width: 100%; margin-top: 16px; }
-.auth-demo-note { display: flex; align-items: flex-start; justify-content: center; gap: 7px; margin: 20px 0 0; color: var(--p-muted); font-size: 10px; line-height: 1.5; text-align: center; }
-.auth-demo-note svg { flex: 0 0 auto; }
-.auth-demo-message { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in oklch, var(--p-orange) 15%, var(--p-cream)); color: var(--p-ink); font-size: 12px; line-height: 1.5; }
+.auth-status-note { display: flex; align-items: flex-start; justify-content: center; gap: 7px; margin: 20px 0 0; color: var(--p-muted); font-size: 10px; line-height: 1.5; text-align: center; }
+.auth-status-note svg { flex: 0 0 auto; }
+.auth-status-message { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in oklch, var(--p-orange) 15%, var(--p-cream)); color: var(--p-ink); font-size: 12px; line-height: 1.5; }
 .auth-signup { margin-top: 24px; padding-top: 20px; border-top: 1px solid color-mix(in oklch, var(--p-cocoa) 14%, transparent); color: var(--p-muted); font-size: 12px; text-align: center; }
 .auth-signup a { color: var(--p-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .auth-footer { color: var(--p-muted); font-size: 10px; text-align: center; }

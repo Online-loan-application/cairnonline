@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronRight, CircleDollarSign, Eye, EyeOff, Fingerprint, Globe2, LockKeyhole, Menu, MoveUpRight, ShieldCheck, Sparkles, WalletCards, X, Zap } from 'lucide-react'
 import { Link, Navigate, Route, Routes } from 'react-router'
@@ -6,10 +6,13 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
 import { Brand, CairnMark } from './components/Brand'
-import AuthPage from './pages/AuthPage'
+import { Toaster } from './components/ui/sonner'
 import './App.css'
 
 gsap.registerPlugin(ScrollTrigger)
+
+const AuthPage = lazy(() => import('./pages/AuthPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 
 type Account = {
   id: string
@@ -24,15 +27,15 @@ type Account = {
 
 const accounts: Account[] = [
   {
-    id: 'everyday', label: 'Everyday', title: 'Everyday account', balance: '$8,240.60', caption: 'Available demo balance', metric: '$3,860', metricLabel: 'Example monthly spending',
+    id: 'everyday', label: 'Everyday', title: 'Everyday account', balance: '$8,240.60', caption: 'Illustrative balance', metric: '$3,860', metricLabel: 'Example monthly spending',
     path: 'M4 114 C42 106 55 78 92 88 S146 126 184 90 S236 38 272 60 S330 96 396 28',
   },
   {
-    id: 'savings', label: 'Savings', title: 'Savings space', balance: '$16,439.60', caption: 'Across three demo goals', metric: '82%', metricLabel: 'Example goal progress',
+    id: 'savings', label: 'Savings', title: 'Savings space', balance: '$16,439.60', caption: 'Across three savings goals', metric: '82%', metricLabel: 'Example goal progress',
     path: 'M4 118 C38 118 56 104 92 100 S144 106 184 82 S232 74 272 54 S332 46 396 18',
   },
   {
-    id: 'global', label: 'Global', title: 'Global account', balance: '$4,920.40', caption: 'Multi-currency demo balance', metric: '12', metricLabel: 'Example currencies',
+    id: 'global', label: 'Global', title: 'Global account', balance: '$4,920.40', caption: 'Illustrative multi-currency balance', metric: '12', metricLabel: 'Example currencies',
     path: 'M4 108 C42 68 62 118 98 92 S146 46 184 70 S238 116 272 76 S338 38 396 48',
   },
 ]
@@ -64,12 +67,17 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
     const dialog = ref.current
     if (!dialog) return
     if (open && !dialog.open) {
-      setConfirmed(false)
       dialog.showModal()
     } else if (!open && dialog.open) {
       dialog.close()
     }
   }, [open])
+
+  function close() {
+    setConfirmed(false)
+    setSummary({ recipient: '', amount: '' })
+    onClose()
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -79,16 +87,16 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
   }
 
   return (
-    <dialog ref={ref} className="transfer-dialog" onClose={onClose} onCancel={onClose} onClick={(e) => { if (e.target === e.currentTarget) onClose() }} aria-labelledby="transfer-title">
+    <dialog ref={ref} className="transfer-dialog" onClose={close} onCancel={close} onClick={(e) => { if (e.target === e.currentTarget) close() }} aria-labelledby="transfer-title">
       <div className="dialog-inner">
-        <button className="icon-button dialog-close" onClick={onClose} aria-label="Close transfer preview"><X size={20} /></button>
-        <span className="dialog-kicker">INTERACTIVE DEMO</span>
+        <button className="icon-button dialog-close" onClick={close} aria-label="Close transfer preview"><X size={20} /></button>
+        <span className="dialog-kicker">INTERACTIVE PREVIEW</span>
         {confirmed ? (
           <div className="transfer-confirmation" aria-live="polite">
             <div className="confirmation-icon"><Check size={34} /></div>
             <h2 id="transfer-title">Preview complete.</h2>
-            <p>This demo would send <strong>${Number(summary.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong> to <strong>{summary.recipient}</strong>. No money has moved.</p>
-            <button className="button button-dark" onClick={onClose}>Back to Cairn <ArrowRight size={17} /></button>
+            <p>This preview represents <strong>${Number(summary.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong> to <strong>{summary.recipient}</strong>. No money has moved.</p>
+            <button className="button button-dark" onClick={close}>Back to Cairn <ArrowRight size={17} /></button>
           </div>
         ) : (
           <>
@@ -106,7 +114,7 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
               <label htmlFor="note">Note <span>Optional</span></label>
               <input id="note" name="note" type="text" maxLength={60} placeholder="Dinner, tickets, rent…" />
               <button className="button button-orange" type="submit">Preview transfer <ArrowUpRight size={17} /></button>
-              <small className="form-note"><LockKeyhole size={13} /> Demonstration only—no real transaction.</small>
+              <small className="form-note"><LockKeyhole size={13} /> Illustrative only—no real transaction.</small>
             </form>
           </>
         )}
@@ -116,8 +124,8 @@ function TransferDialog({ open, onClose }: { open: boolean; onClose: () => void 
 }
 
 function LandingPage() {
-  const reducedMotion = useRef(window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const [splash, setSplash] = useState(!reducedMotion.current)
+  const [reducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [splash, setSplash] = useState(!reducedMotion)
   const [menuOpen, setMenuOpen] = useState(false)
   const [activeAccount, setActiveAccount] = useState(accounts[0])
   const [balanceVisible, setBalanceVisible] = useState(true)
@@ -136,7 +144,7 @@ function LandingPage() {
   }, [])
 
   useEffect(() => {
-    if (reducedMotion.current) return
+    if (reducedMotion) return
     const lenis = new Lenis({ duration: 1.05, smoothWheel: true })
     lenis.on('scroll', ScrollTrigger.update)
     const raf = (time: number) => lenis.raf(time * 1000)
@@ -172,10 +180,10 @@ function LandingPage() {
       gsap.ticker.remove(raf)
       lenis.destroy()
     }
-  }, [])
+  }, [reducedMotion])
 
   function tiltCard(event: React.PointerEvent<HTMLDivElement>) {
-    if (reducedMotion.current || !cardRef.current) return
+    if (reducedMotion || !cardRef.current) return
     const rect = event.currentTarget.getBoundingClientRect()
     const x = (event.clientX - rect.left) / rect.width - 0.5
     const y = (event.clientY - rect.top) / rect.height - 0.5
@@ -225,9 +233,9 @@ function LandingPage() {
             </div>
           </div>
 
-          <div className="hero-product" aria-label="Cairn app demonstration">
+          <div className="hero-product" aria-label="Cairn illustrative app preview">
             <div className="account-glass">
-              <div className="product-top"><span>CAIRN / DEMO</span><Fingerprint size={23} /></div>
+              <div className="product-top"><span>CAIRN / PREVIEW</span><Fingerprint size={23} /></div>
               <p>Total balance</p>
               <div className="hero-balance"><span>$</span>24,680<small>.20</small></div>
               <div className="balance-change"><MoveUpRight size={15} /> 8.4% <span>example this month</span></div>
@@ -237,12 +245,12 @@ function LandingPage() {
                 <path d="M4 112 C48 112 56 92 92 94 S144 110 184 82 S238 72 270 54 S338 56 416 12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                 <circle cx="416" cy="12" r="6" />
               </svg>
-              <div className="product-bottom"><span><i /> Demo account</span><span>•• 2048</span></div>
+              <div className="product-bottom"><span><i /> Illustrative account</span><span>•• 2048</span></div>
             </div>
             <div className="mini-bank-card">
               <div><CairnMark light /><span>CAIRN</span></div>
               <strong>•••• &nbsp; 2048</strong>
-              <small>DEMO CARD</small>
+              <small>PREVIEW CARD</small>
             </div>
             <div className="floating-note"><Sparkles size={20} /><div><strong>Goal almost there</strong><span>82% · illustrative</span></div></div>
           </div>
@@ -255,11 +263,11 @@ function LandingPage() {
             <p>Switch between everyday money, savings goals, and global balances without losing the thread. This interactive preview uses fictional data.</p>
           </div>
           <div className="account-workspace reveal">
-            <div className="account-tabs" role="tablist" aria-label="Demo account types">
+            <div className="account-tabs" role="tablist" aria-label="Illustrative account types">
               {accounts.map((account) => <button key={account.id} role="tab" aria-selected={activeAccount.id === account.id} aria-controls="account-panel" className={activeAccount.id === account.id ? 'active' : ''} onClick={() => setActiveAccount(account)}>{account.label}<ChevronRight size={16} /></button>)}
             </div>
             <div className="account-panel" id="account-panel" role="tabpanel" key={activeAccount.id}>
-              <div className="account-panel-head"><div><span>{activeAccount.title}</span><div className="panel-balance">{balanceVisible ? activeAccount.balance : '$••••••'}</div><small>{activeAccount.caption}</small></div><button className="icon-button" onClick={() => setBalanceVisible(!balanceVisible)} aria-label={balanceVisible ? 'Hide demo balance' : 'Show demo balance'}>{balanceVisible ? <EyeOff size={20} /> : <Eye size={20} />}</button></div>
+              <div className="account-panel-head"><div><span>{activeAccount.title}</span><div className="panel-balance">{balanceVisible ? activeAccount.balance : '$••••••'}</div><small>{activeAccount.caption}</small></div><button className="icon-button" onClick={() => setBalanceVisible(!balanceVisible)} aria-label={balanceVisible ? 'Hide illustrative balance' : 'Show illustrative balance'}>{balanceVisible ? <EyeOff size={20} /> : <Eye size={20} />}</button></div>
               <svg className="account-chart" viewBox="0 0 400 140" role="img" aria-label={`${activeAccount.label} illustrative account trend`}><path d={activeAccount.path} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
               <div className="account-panel-foot"><div><strong>{activeAccount.metric}</strong><span>{activeAccount.metricLabel}</span></div><button className="button button-orange" onClick={() => setTransferOpen(true)}>Preview transfer <ArrowUpRight size={17} /></button></div>
             </div>
@@ -279,7 +287,7 @@ function LandingPage() {
             <h2 id="cards-title">A little less plastic.<br /><span className="serif">A lot more possibility.</span></h2>
             <p>A card concept designed to feel as considered as the app behind it. Move your pointer across the card to explore its tactile finish.</p>
             <ul className="feature-list"><li><Check size={17} /> Virtual and physical card concept</li><li><Check size={17} /> Clear spending controls</li><li><Check size={17} /> Designed for global everyday use</li></ul>
-            <button className="text-link" onClick={() => setTransferOpen(true)}>Try the transfer demo <ArrowRight size={16} /></button>
+            <button className="text-link" onClick={() => setTransferOpen(true)}>Try the transfer preview <ArrowRight size={16} /></button>
           </div>
           <div className="card-stage reveal" onPointerMove={tiltCard} onPointerLeave={resetCard}>
             <svg className="card-orbit" viewBox="0 0 600 600" aria-hidden="true"><circle cx="300" cy="300" r="240" /><circle cx="300" cy="300" r="176" /></svg>
@@ -287,7 +295,7 @@ function LandingPage() {
               <div className="tilt-card-top"><div><CairnMark light /><span>CAIRN</span></div><WalletCards size={30} /></div>
               <div className="card-chip"><span /><span /><span /></div>
               <div className="card-number">5312 &nbsp; •••• &nbsp; •••• &nbsp; 2048</div>
-              <div className="tilt-card-bottom"><span>DEMO CARDHOLDER<small>CONCEPT / NO VALUE</small></span><strong>09/30</strong></div>
+              <div className="tilt-card-bottom"><span>CAIRN CARDHOLDER<small>CONCEPT / NO VALUE</small></span><strong>09/30</strong></div>
             </div>
             <span className="card-stage-note">MOVE TO TILT</span>
           </div>
@@ -331,12 +339,18 @@ function LandingPage() {
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<AuthPage mode="login" />} />
-      <Route path="/create-account" element={<AuthPage mode="create-account" />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Suspense fallback={<div role="status">Loading…</div>}>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<AuthPage mode="login" />} />
+          <Route path="/create-account" element={<AuthPage mode="create-account" />} />
+          <Route path="/dashboard/*" element={<DashboardPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+      <Toaster position="top-right" richColors />
+    </>
   )
 }
 

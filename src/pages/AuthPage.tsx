@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole } from 'lucide-react'
-import { Link } from 'react-router'
+import { ArrowLeft, ArrowRight, Eye, EyeOff, LayoutDashboard, LockKeyhole } from 'lucide-react'
+import { Link, useNavigate } from 'react-router'
+import { toast } from 'sonner'
 import { Brand, CairnMark } from '../components/Brand'
 import { countries, type Country } from '../lib/countries'
 import { supabase } from '../lib/supabase'
@@ -11,6 +12,7 @@ type AuthPageProps = {
 }
 
 export default function AuthPage({ mode }: AuthPageProps) {
+  const navigate = useNavigate()
   const isCreateAccount = mode === 'create-account'
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null)
@@ -51,7 +53,9 @@ export default function AuthPage({ mode }: AuthPageProps) {
     event.preventDefault()
     const form = event.currentTarget
     if (!supabase) {
-      setError('Supabase is not configured. Add your project URL and publishable key to .env.local, then restart the app.')
+      const message = 'Supabase is not configured. Add your project URL and publishable key to .env.local, then restart the app.'
+      setError(message)
+      toast.error('Authentication is unavailable', { description: message })
       return
     }
 
@@ -60,7 +64,9 @@ export default function AuthPage({ mode }: AuthPageProps) {
     const password = String(formData.get('password'))
 
     if (isCreateAccount && !selectedCountry) {
-      setError('Choose your country to continue.')
+      const message = 'Choose your country to continue.'
+      setError(message)
+      toast.error(message)
       return
     }
 
@@ -92,21 +98,38 @@ export default function AuthPage({ mode }: AuthPageProps) {
         if (signUpError) throw signUpError
 
         if (data.session) {
-          setMessage('Your account is ready. This banking experience is still a preview and does not contain real account data.')
+          toast.success('Your account is ready.')
+          navigate('/dashboard', { replace: true })
           form.reset()
           setSelectedCountry(null)
           setCountrySearch('')
         } else {
-          setError('Supabase created the account but did not start a session. Check that email confirmation is disabled in Authentication settings, then check Supabase Auth logs if the issue continues.')
+          const message = 'Supabase created the account but did not start a session. Check that email confirmation is disabled in Authentication settings, then check Supabase Auth logs if the issue continues.'
+          setError(message)
+          toast.error('Account created, but sign-in did not start', { description: message })
         }
         return
       }
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
       if (signInError) throw signInError
-      setMessage('You are logged in. This app is a concept only; it does not display real banking balances or transactions.')
+      const { error: activityError } = await supabase.from('user_activity').insert({
+        user_id: signInData.user.id,
+        event_type: 'signed_in',
+        description: 'You signed in to your Cairn account.',
+      })
+      if (activityError) {
+        toast.error('Sign-in activity could not be recorded', {
+          description: `${activityError.message}. Apply supabase/activity_notifications.sql to enable activity history.`,
+        })
+      } else {
+        toast.success('Welcome back.')
+      }
+      navigate('/dashboard', { replace: true })
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Authentication failed. Please try again.')
+      const message = caughtError instanceof Error ? caughtError.message : 'Authentication failed. Please try again.'
+      setError(message)
+      toast.error('Authentication failed', { description: message })
     } finally {
       setBusy(false)
     }
@@ -119,11 +142,30 @@ export default function AuthPage({ mode }: AuthPageProps) {
     setMessage('')
 
     try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) {
+        toast.error('Sign-out activity could not be recorded', { description: sessionError.message })
+      }
+      if (sessionData.session?.user) {
+        const { error: activityError } = await supabase.from('user_activity').insert({
+          user_id: sessionData.session.user.id,
+          event_type: 'sign_out_requested',
+          description: 'You requested to sign out of your Cairn account.',
+        })
+        if (activityError) {
+          toast.error('Sign-out activity could not be recorded', {
+            description: `${activityError.message}. Apply supabase/activity_notifications.sql to enable activity history.`,
+          })
+        }
+      }
       const { error: signOutError } = await supabase.auth.signOut()
       if (signOutError) throw signOutError
+      toast.success('You have logged out.')
       setMessage('You have logged out.')
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to log out. Please try again.')
+      const message = caughtError instanceof Error ? caughtError.message : 'Unable to log out. Please try again.'
+      setError(message)
+      toast.error('Unable to log out', { description: message })
     } finally {
       setBusy(false)
     }
@@ -151,7 +193,8 @@ export default function AuthPage({ mode }: AuthPageProps) {
           {currentUserEmail ? (
             <div className="auth-session-message">
               <p>You’re logged in as <strong>{currentUserEmail}</strong>.</p>
-              <p>This concept does not provide real banking balances or transactions.</p>
+              <p>Continue to your account overview. Balances and activity are fictional.</p>
+              <Link className="button button-dark auth-submit" to="/dashboard">Open dashboard <LayoutDashboard size={17} /></Link>
               <button className="button button-dark auth-submit" type="button" onClick={logOut} disabled={busy}>{busy ? 'Please wait…' : 'Log out'} <ArrowRight size={17} /></button>
             </div>
           ) : (
@@ -227,8 +270,8 @@ export default function AuthPage({ mode }: AuthPageProps) {
             </form>
           )}
           {error && <p className="auth-error-message" role="alert">{error}</p>}
-          {message && <p className="auth-demo-message" role="status">{message}</p>}
-          <p className="auth-demo-note"><LockKeyhole size={14} /> Supabase secures your login. This app does not provide real banking services.</p>
+          {message && <p className="auth-status-message" role="status">{message}</p>}
+          <p className="auth-status-note"><LockKeyhole size={14} /> Supabase secures your login. This app does not provide real banking services.</p>
           <div className="auth-signup">
             {isCreateAccount ? <>Already have an account? <Link to="/login">Log in</Link></> : <>New to Cairn? <Link to="/create-account">Begin your journey</Link></>}
           </div>
