@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { Brand, CairnMark } from '../components/Brand'
 import { countries, type Country } from '../lib/countries'
+import { getDashboardPath } from '../lib/adminAccess'
 import { supabase } from '../lib/supabase'
 
 type AuthPageProps = {
@@ -21,6 +22,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
   const [busy, setBusy] = useState(false)
   const [sessionChecked, setSessionChecked] = useState(!supabase)
   const [currentUserEmail, setCurrentUserEmail] = useState('')
+  const [currentUserId, setCurrentUserId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -29,13 +31,16 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
     let active = true
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (active) setCurrentUserEmail(session?.user.email ?? '')
+      if (!active) return
+      setCurrentUserEmail(session?.user.email ?? '')
+      setCurrentUserId(session?.user.id ?? '')
     })
 
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
       if (!active) return
       if (sessionError) setError(sessionError.message)
       setCurrentUserEmail(data.session?.user.email ?? '')
+      setCurrentUserId(data.session?.user.id ?? '')
       setSessionChecked(true)
     }).catch((sessionError: unknown) => {
       if (!active) return
@@ -48,6 +53,16 @@ export default function AuthPage({ mode }: AuthPageProps) {
       subscription.unsubscribe()
     }
   }, [])
+
+  async function openDashboard(userId: string) {
+    try {
+      navigate(await getDashboardPath(userId), { replace: true })
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : 'Administrator access could not be checked.'
+      toast.error('Could not verify administrator access', { description: message })
+      navigate('/dashboard', { replace: true })
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -99,7 +114,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
         if (data.session) {
           toast.success('Your account is ready.')
-          navigate('/dashboard', { replace: true })
+          await openDashboard(data.session.user.id)
           form.reset()
           setSelectedCountry(null)
           setCountrySearch('')
@@ -125,7 +140,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
       } else {
         toast.success('Welcome back.')
       }
-      navigate('/dashboard', { replace: true })
+      await openDashboard(signInData.user.id)
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : 'Authentication failed. Please try again.'
       setError(message)
@@ -194,7 +209,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
             <div className="auth-session-message">
               <p>You’re logged in as <strong>{currentUserEmail}</strong>.</p>
               <p>Continue to your account overview. Balances and activity are fictional.</p>
-              <Link className="button button-dark auth-submit" to="/dashboard">Open dashboard <LayoutDashboard size={17} /></Link>
+              <button className="button button-dark auth-submit" type="button" onClick={() => void openDashboard(currentUserId)} disabled={!currentUserId}>Open dashboard <LayoutDashboard size={17} /></button>
               <button className="button button-dark auth-submit" type="button" onClick={logOut} disabled={busy}>{busy ? 'Please wait…' : 'Log out'} <ArrowRight size={17} /></button>
             </div>
           ) : (

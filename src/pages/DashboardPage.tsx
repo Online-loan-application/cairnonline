@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowDownLeft, ArrowLeft, ArrowDownToLine, ArrowUpRight, Bell, Check, CircleDollarSign, CreditCard, Ellipsis, Eye, EyeOff, Globe2, Landmark, LayoutDashboard, LogOut, Menu, PiggyBank, Send, Smartphone, UserRound, Wallet, WalletCards, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeft, ArrowDownToLine, ArrowUpRight, Bell, Check, CircleDollarSign, CreditCard, Ellipsis, Eye, EyeOff, Globe2, Landmark, LayoutDashboard, LogOut, Menu, PiggyBank, Send, ShieldCheck, Smartphone, UserRound, Wallet, WalletCards, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, NavLink, Navigate, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -37,7 +37,7 @@ const transferMethodDetails: Record<string, { icon: LucideIcon; description: str
 
 type ActivityEvent = {
   id: number
-  event_type: 'account_created' | 'signed_in' | 'sign_out_requested' | 'deposit_preview' | 'transfer_preview'
+  event_type: 'account_created' | 'signed_in' | 'sign_out_requested' | 'deposit_preview' | 'transfer_preview' | 'account_suspended' | 'account_reactivated'
   description: string
   created_at: string
   read_at: string | null
@@ -60,6 +60,8 @@ const activityTitles: Record<ActivityEvent['event_type'], string> = {
   sign_out_requested: 'Sign-out requested',
   deposit_preview: 'Money in recorded',
   transfer_preview: 'Money out recorded',
+  account_suspended: 'Account access suspended',
+  account_reactivated: 'Account access restored',
 }
 
 type DashboardAction = 'deposit' | 'transfer'
@@ -334,6 +336,9 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [user, setUser] = useState<DashboardUser | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminAccessLoading, setAdminAccessLoading] = useState(true)
+  const [isSuspended, setIsSuspended] = useState(false)
   const [loading, setLoading] = useState(true)
   const [activity, setActivity] = useState<ActivityEvent[]>([])
   const [transactions, setTransactions] = useState<LedgerTransaction[]>([])
@@ -348,6 +353,7 @@ export default function DashboardPage() {
   const [action, setAction] = useState<DashboardAction | null>(null)
   const [transferMethod, setTransferMethod] = useState(transferMethods[0])
   const notificationsRef = useRef<HTMLDivElement>(null)
+  const authUserId = useRef<string | null>(null)
   const unreadCount = activity.filter((event) => !event.read_at).length
   const page = location.pathname.endsWith('/accounts')
     ? 'accounts'
@@ -384,6 +390,12 @@ export default function DashboardPage() {
     let active = true
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return
+      const nextUserId = session?.user.id ?? null
+      if (nextUserId !== authUserId.current) {
+        authUserId.current = nextUserId
+        setIsAdmin(false)
+        setAdminAccessLoading(Boolean(session?.user))
+      }
       setUser(getDashboardUser(session?.user ?? null))
       setLoading(false)
     })
@@ -391,7 +403,9 @@ export default function DashboardPage() {
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
       if (!active) return
       if (sessionError) setError(sessionError.message)
+      authUserId.current = data.session?.user.id ?? null
       setUser(getDashboardUser(data.session?.user ?? null))
+      if (!data.session?.user) setAdminAccessLoading(false)
       setLoading(false)
     }).catch((sessionError: unknown) => {
       if (!active) return
@@ -415,7 +429,7 @@ export default function DashboardPage() {
       try {
         const { data: profile, error: profileError } = await client
           .from('profiles')
-          .select('currency_code, country_name')
+          .select('currency_code, country_name, is_suspended')
           .eq('id', userId)
           .maybeSingle()
         if (!active) return
@@ -428,6 +442,20 @@ export default function DashboardPage() {
             countryName: profile.country_name ?? current.countryName,
           } : current)
         }
+        if (profile) setIsSuspended(profile.is_suspended === true)
+
+        const { data: adminGrant, error: adminError } = await client
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (!active) return
+        if (adminError) {
+          toast.error('Administrator access could not be checked', { description: adminError.message })
+        } else {
+          setIsAdmin(Boolean(adminGrant))
+        }
+        setAdminAccessLoading(false)
 
         const allEvents: ActivityEvent[] = []
         const pageSize = 500
@@ -467,7 +495,10 @@ export default function DashboardPage() {
         setActivityError(message)
         toast.error('Could not load account history', { description: message })
       } finally {
-        if (active) setActivityLoading(false)
+        if (active) {
+          setAdminAccessLoading(false)
+          setActivityLoading(false)
+        }
       }
     }
 
@@ -476,6 +507,11 @@ export default function DashboardPage() {
       active = false
     }
   }, [user?.id])
+
+  useEffect(() => {
+    if (adminAccessLoading || !isAdmin || page !== 'overview') return
+    navigate('/admin', { replace: true })
+  }, [adminAccessLoading, isAdmin, navigate, page])
 
   useEffect(() => {
     if (!notificationsOpen) return
@@ -565,6 +601,23 @@ export default function DashboardPage() {
     void markActivityRead([id])
   }
 
+  async function leaveSuspendedSession() {
+    const client = supabase
+    if (!client) return
+    try {
+      const { error: signOutError } = await client.auth.signOut()
+      if (signOutError) {
+        toast.error('Unable to sign out', { description: signOutError.message })
+      } else {
+        navigate('/login', { replace: true })
+      }
+    } catch (caughtError) {
+      toast.error('Unable to sign out', {
+        description: caughtError instanceof Error ? caughtError.message : 'The server could not be reached.',
+      })
+    }
+  }
+
   async function logOut() {
     if (!supabase) return
     setBusy(true)
@@ -590,7 +643,7 @@ export default function DashboardPage() {
     }
   }
 
-  if (loading) {
+  if (loading || (user && adminAccessLoading)) {
     return <main className="dashboard-state" role="status">Checking your session…</main>
   }
 
@@ -617,6 +670,22 @@ export default function DashboardPage() {
   }
 
   if (!user) return <Navigate to="/login" replace />
+  if (isSuspended) {
+    return (
+      <main className="dashboard-state">
+        <Brand />
+        <h1>Account access suspended.</h1>
+        <p>Your account access has been suspended. Contact support for assistance.</p>
+        <button
+          className="button button-dark"
+          type="button"
+          onClick={() => void leaveSuspendedSession()}
+        >
+          <LogOut size={17} /> Sign out
+        </button>
+      </main>
+    )
+  }
 
   return (
     <main className="dashboard-page">
@@ -702,6 +771,7 @@ export default function DashboardPage() {
             <NavLink to="/dashboard/accounts" className={({ isActive }) => isActive ? 'active' : ''} onClick={() => setSidebarOpen(false)}><Wallet size={18} /> Accounts</NavLink>
             <NavLink to="/dashboard/activity" className={({ isActive }) => isActive ? 'active' : ''} onClick={() => setSidebarOpen(false)}><ArrowDownLeft size={18} /> Activity</NavLink>
             <NavLink to="/dashboard/profile" className={({ isActive }) => isActive ? 'active' : ''} onClick={() => setSidebarOpen(false)}><UserRound size={18} /> Profile</NavLink>
+            {isAdmin && <NavLink to="/admin" className={({ isActive }) => isActive ? 'active' : ''} onClick={() => setSidebarOpen(false)}><ShieldCheck size={18} /> Admin</NavLink>}
           </nav>
           <div className="dashboard-sidebar-actions">
             <p className="dashboard-sidebar-label">QUICK ACTIONS</p>

@@ -13,6 +13,7 @@ gsap.registerPlugin(ScrollTrigger)
 
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'))
 
 type Account = {
   id: string
@@ -346,6 +347,7 @@ function App() {
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/create-account" element={<AuthPage mode="create-account" />} />
           <Route path="/dashboard/*" element={<DashboardPage />} />
+          <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
