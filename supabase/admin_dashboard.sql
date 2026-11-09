@@ -31,6 +31,51 @@ $$;
 revoke all on function public.is_admin() from public, anon;
 grant execute on function public.is_admin() to authenticated;
 
+create or replace function public.admin_list_user_balances()
+returns table (
+  user_id uuid,
+  currency_code text,
+  money_in numeric,
+  money_out numeric,
+  total_balance numeric
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null or not public.is_admin() then
+    raise exception 'Administrator access is required.';
+  end if;
+
+  return query
+  select
+    profile.id,
+    profile.currency_code,
+    coalesce(sum(case
+      when transaction.direction = 'money_in' then transaction.amount
+      else 0
+    end), 0),
+    coalesce(sum(case
+      when transaction.direction = 'money_out' then transaction.amount
+      else 0
+    end), 0),
+    coalesce(sum(case
+      when transaction.direction = 'money_in' then transaction.amount
+      else -transaction.amount
+    end), 0)
+  from public.profiles as profile
+  left join public.account_transactions as transaction
+    on transaction.user_id = profile.id
+    and transaction.currency_code = profile.currency_code
+  group by profile.id, profile.currency_code;
+end;
+$$;
+
+revoke all on function public.admin_list_user_balances() from public, anon, authenticated;
+grant execute on function public.admin_list_user_balances() to authenticated;
+
 alter table public.profiles
   add column if not exists is_suspended boolean not null default false;
 
@@ -64,6 +109,7 @@ create trigger reject_suspended_account_transaction
   for each row execute function public.reject_suspended_account_transaction();
 
 drop policy if exists "Users can read their own profile" on public.profiles;
+drop policy if exists "Users and admins can read profiles" on public.profiles;
 create policy "Users and admins can read profiles"
   on public.profiles
   for select
@@ -71,6 +117,7 @@ create policy "Users and admins can read profiles"
   using ((select auth.uid()) = id or (select public.is_admin()));
 
 drop policy if exists "Users can update their own profile" on public.profiles;
+drop policy if exists "Users can update their own display name" on public.profiles;
 create policy "Users can update their own display name"
   on public.profiles
   for update
@@ -94,6 +141,7 @@ alter table public.user_activity
   ));
 
 drop policy if exists "Users can read their own activity" on public.user_activity;
+drop policy if exists "Users and admins can read activity" on public.user_activity;
 create policy "Users and admins can read activity"
   on public.user_activity
   for select
@@ -101,6 +149,7 @@ create policy "Users and admins can read activity"
   using ((select auth.uid()) = user_id or (select public.is_admin()));
 
 drop policy if exists "Users can record their own activity" on public.user_activity;
+drop policy if exists "Active users can record their own activity" on public.user_activity;
 create policy "Active users can record their own activity"
   on public.user_activity
   for insert
@@ -114,6 +163,7 @@ create policy "Active users can record their own activity"
   );
 
 drop policy if exists "Users can mark their own activity as read" on public.user_activity;
+drop policy if exists "Active users can mark their own activity as read" on public.user_activity;
 create policy "Active users can mark their own activity as read"
   on public.user_activity
   for update
@@ -134,6 +184,7 @@ create policy "Active users can mark their own activity as read"
   );
 
 drop policy if exists "Users can read their own account transactions" on public.account_transactions;
+drop policy if exists "Active users and admins can read account transactions" on public.account_transactions;
 create policy "Active users and admins can read account transactions"
   on public.account_transactions
   for select
@@ -304,3 +355,5 @@ comment on table public.admin_users is
   'Administrator grants. Manage only through the trusted Supabase SQL Editor; never expose insert or update access to app users.';
 comment on function public.admin_delete_user(uuid, text) is
   'Permanently deletes a non-admin auth user and cascades their profile, illustrative ledger and activity data. Requires exact email confirmation.';
+
+notify pgrst, 'reload schema';

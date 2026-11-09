@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
-import { ArrowDownLeft, ArrowLeft, ArrowDownToLine, ArrowUpRight, Bell, Check, CircleDollarSign, CreditCard, Ellipsis, Eye, EyeOff, Globe2, Landmark, LayoutDashboard, LogOut, Menu, PiggyBank, Send, ShieldCheck, Smartphone, UserRound, Wallet, WalletCards, X } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeft, ArrowDownToLine, ArrowUpRight, Bell, Check, CreditCard, Eye, EyeOff, LayoutDashboard, LogOut, Menu, PiggyBank, Send, ShieldCheck, UserRound, Wallet, X } from 'lucide-react'
 import { Link, NavLink, Navigate, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import type { User } from '@supabase/supabase-js'
 import { Brand } from '../components/Brand'
 import { supabase } from '../lib/supabase'
+import { transferMethods } from '../lib/transferMethods'
 import './DashboardPage.css'
 
 type DashboardUser = {
@@ -22,18 +21,6 @@ const accounts = [
   { name: 'Savings space', detail: 'Rainy day goal · 0%', balance: 0, icon: PiggyBank },
   { name: 'Cairn card', detail: 'Virtual · •••• 5312', balance: null, icon: CreditCard },
 ]
-
-const accountNames = ['Everyday account', 'Savings space'] as const
-const transferMethods = ['Local transfer', 'Cash App', 'PayPal', 'USDT', 'Wise', 'Venmo', 'Other']
-const transferMethodDetails: Record<string, { icon: LucideIcon; description: string }> = {
-  'Local transfer': { icon: Landmark, description: 'Bank transfer' },
-  'Cash App': { icon: Smartphone, description: 'Mobile wallet' },
-  PayPal: { icon: WalletCards, description: 'Digital wallet' },
-  USDT: { icon: CircleDollarSign, description: 'Stablecoin route' },
-  Wise: { icon: Globe2, description: 'International' },
-  Venmo: { icon: Send, description: 'Peer-to-peer' },
-  Other: { icon: Ellipsis, description: 'Other options' },
-}
 
 type ActivityEvent = {
   id: number
@@ -62,142 +49,6 @@ const activityTitles: Record<ActivityEvent['event_type'], string> = {
   transfer_preview: 'Money out recorded',
   account_suspended: 'Account access suspended',
   account_reactivated: 'Account access restored',
-}
-
-type DashboardAction = 'deposit' | 'transfer'
-
-function DashboardActionDialog({
-  action,
-  currencyCode,
-  transferMethod,
-  onTransferMethodChange,
-  onClose,
-  onTransaction,
-}: {
-  action: DashboardAction | null
-  currencyCode: string
-  transferMethod: string
-  onTransferMethodChange: (method: string) => void
-  onClose: () => void
-  onTransaction: (transaction: Omit<LedgerTransaction, 'id' | 'created_at'>) => Promise<LedgerTransaction>
-}) {
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const [transaction, setTransaction] = useState<LedgerTransaction | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [selectedMethod, setSelectedMethod] = useState(transferMethod)
-
-  useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-
-    if (action && !dialog.open) dialog.showModal()
-    else if (!action && dialog.open) dialog.close()
-  }, [action])
-
-  useEffect(() => {
-    setSelectedMethod(transferMethod)
-  }, [transferMethod])
-
-  function close() {
-    setTransaction(null)
-    onClose()
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const accountName = String(formData.get('account_name'))
-    const destination = String(formData.get('destination') ?? accountName)
-    const amount = Number(formData.get('amount'))
-    setSaving(true)
-    try {
-      const savedTransaction = await onTransaction({
-        direction: action === 'deposit' ? 'money_in' : 'money_out',
-        account_name: accountName,
-        amount,
-        currency_code: currencyCode,
-        transfer_method: action === 'deposit' ? 'Cash deposit' : selectedMethod,
-        destination,
-      })
-      setTransaction(savedTransaction)
-      toast.success(`${action === 'deposit' ? 'Deposit' : 'Transfer'} recorded`, {
-        description: 'Added to your illustrative account history. No real funds moved.',
-      })
-    } catch (caughtError) {
-      toast.error('Could not record this transaction', {
-        description: caughtError instanceof Error ? caughtError.message : 'Please try again.',
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const title = action === 'deposit' ? 'Deposit' : 'Transfer'
-
-  return (
-    <dialog
-      ref={dialogRef}
-      className="dashboard-action-dialog"
-      aria-labelledby="dashboard-action-title"
-      onClose={close}
-      onCancel={close}
-      onClick={(event) => { if (event.target === event.currentTarget) close() }}
-    >
-      <div className="dashboard-action-dialog-inner">
-        <button className="dashboard-action-close" type="button" onClick={close} aria-label="Close action preview"><X size={19} /></button>
-        <p className="eyebrow">ILLUSTRATIVE LEDGER · NO REAL FUNDS MOVE</p>
-        {transaction ? (
-          <div className="dashboard-action-result" aria-live="polite">
-            <span className="dashboard-action-result-icon"><Check size={24} /></span>
-            <h2 id="dashboard-action-title">Recorded.</h2>
-            <p>
-              {transaction.direction === 'money_in' ? 'Money in: ' : 'Money out: '}
-              <strong>{formatCurrency(transaction.amount, transaction.currency_code)}</strong>
-              {' · '}{transaction.account_name} · {transaction.transfer_method}
-              {transaction.direction === 'money_out' && <> · To {transaction.destination}</>}.
-              {' '}This only updates the illustrative ledger; no real funds moved.
-            </p>
-            <button className="button button-dark" type="button" onClick={close}>Done <Check size={16} /></button>
-          </div>
-        ) : (
-          <>
-            <h2 id="dashboard-action-title">{title}</h2>
-            <p className="dashboard-action-intro">
-              {action === 'deposit'
-                ? 'Record a simulated deposit in your illustrative account history.'
-                : `Record a simulated ${selectedMethod} transfer in your illustrative account history.`}
-            </p>
-            <form className="dashboard-action-form" onSubmit={submit}>
-              <label htmlFor="transaction-account">{action === 'deposit' ? 'Deposit to' : 'Transfer from'}</label>
-              <select id="transaction-account" name="account_name" defaultValue={accountNames[0]}>
-                {accountNames.map((accountName) => <option key={accountName}>{accountName}</option>)}
-              </select>
-              {action === 'transfer' && (
-                <>
-                  <label htmlFor="transfer-method">Transfer method</label>
-                  <select
-                    id="transfer-method"
-                    value={selectedMethod}
-                    onChange={(event) => {
-                      setSelectedMethod(event.target.value)
-                      onTransferMethodChange(event.target.value)
-                    }}
-                  >
-                    {transferMethods.map((method) => <option key={method}>{method}</option>)}
-                  </select>
-                  <label htmlFor="transfer-recipient">Recipient or destination</label>
-                  <input id="transfer-recipient" name="destination" type="text" maxLength={100} placeholder="Enter recipient or destination" required />
-                </>
-              )}
-              <label htmlFor="action-amount">Amount ({currencyCode})</label>
-              <div className="dashboard-action-amount"><input id="action-amount" name="amount" type="number" min="0.000001" max="10000000" step="any" placeholder="0.00" required /></div>
-              <button className="button button-dark" type="submit" disabled={saving}>{saving ? 'Recording…' : action === 'deposit' ? 'Record deposit' : 'Record transfer'} <ArrowUpRight size={17} /></button>
-            </form>
-          </>
-        )}
-      </div>
-    </dialog>
-  )
 }
 
 function getDashboardUser(user: User | null, currencyCode?: string | null): DashboardUser | null {
@@ -350,8 +201,7 @@ export default function DashboardPage() {
   const [now, setNow] = useState(() => new Date())
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [action, setAction] = useState<DashboardAction | null>(null)
-  const [transferMethod, setTransferMethod] = useState(transferMethods[0])
+  const transferMethod = transferMethods[0].name
   const notificationsRef = useRef<HTMLDivElement>(null)
   const authUserId = useRef<string | null>(null)
   const unreadCount = activity.filter((event) => !event.read_at).length
@@ -544,38 +394,6 @@ export default function DashboardPage() {
     if (insertError) throw insertError
     if (!data) throw new Error('The activity was not saved. Please try again.')
     setActivity((current) => [data as ActivityEvent, ...current])
-  }
-
-  async function recordTransaction(transaction: Omit<LedgerTransaction, 'id' | 'created_at'>) {
-    if (!supabase || !user) throw new Error('You must be signed in to record an account activity.')
-    const { data, error: transactionError } = await supabase.rpc('record_account_transaction', {
-      p_direction: transaction.direction,
-      p_account_name: transaction.account_name,
-      p_amount: transaction.amount,
-      p_currency_code: transaction.currency_code,
-      p_transfer_method: transaction.transfer_method,
-      p_destination: transaction.destination,
-    })
-    if (transactionError) throw transactionError
-    const returnedTransaction = Array.isArray(data) ? data[0] : data
-    const savedTransaction = parseLedgerTransaction(returnedTransaction)
-    if (!savedTransaction) throw new Error('The account entry could not be verified. Please refresh and check the activity page.')
-    setTransactions((current) => [savedTransaction, ...current])
-
-    const { data: events, error: eventsError } = await supabase
-      .from('user_activity')
-      .select('id, event_type, description, created_at, read_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(500)
-    if (eventsError) {
-      toast.error('Transaction saved, but activity notifications could not refresh', { description: eventsError.message })
-    } else {
-      setActivity((events ?? []) as ActivityEvent[])
-    }
-
-    return savedTransaction
   }
 
   async function markActivityRead(ids: number[]) {
@@ -775,8 +593,8 @@ export default function DashboardPage() {
           </nav>
           <div className="dashboard-sidebar-actions">
             <p className="dashboard-sidebar-label">QUICK ACTIONS</p>
-            <button type="button" onClick={() => { setAction('deposit'); setSidebarOpen(false) }}><ArrowDownToLine size={17} /> Deposit</button>
-            <button type="button" onClick={() => { setAction('transfer'); setSidebarOpen(false) }}><Send size={17} /> Transfer</button>
+            <Link to="/dashboard/deposit" onClick={() => setSidebarOpen(false)}><ArrowDownToLine size={17} /> Deposit</Link>
+            <Link to={`/dashboard/transfer?method=${encodeURIComponent(transferMethod)}`} onClick={() => setSidebarOpen(false)}><Send size={17} /> Transfer</Link>
           </div>
         </aside>
 
@@ -816,8 +634,8 @@ export default function DashboardPage() {
                 <small>Recorded account activity</small>
               </div>
               <div className="dashboard-balance-actions">
-                <button className="dashboard-money-in" type="button" onClick={() => setAction('deposit')}><ArrowDownToLine size={17} /> Money in</button>
-                <button className="dashboard-money-out" type="button" onClick={() => setAction('transfer')}><ArrowUpRight size={17} /> Money out</button>
+                <Link className="dashboard-money-in" to="/dashboard/deposit"><ArrowDownToLine size={17} /> Money in</Link>
+                <Link className="dashboard-money-out" to={`/dashboard/transfer?method=${encodeURIComponent(transferMethod)}`}><ArrowUpRight size={17} /> Money out</Link>
               </div>
             </section>
 
@@ -830,24 +648,19 @@ export default function DashboardPage() {
                 <p>Choose an illustrative route. This does not connect to a payment service.</p>
               </div>
               <div className="dashboard-transfer-method-list">
-                {transferMethods.map((method) => {
-                  const { icon: Icon, description } = transferMethodDetails[method]
+                {transferMethods.map(({ name: method, description, icon: Icon }) => {
                   return (
-                  <button
+                  <Link
                     className={transferMethod === method ? 'active' : ''}
                     key={method}
-                    type="button"
-                    aria-pressed={transferMethod === method}
+                    to={`/dashboard/transfer?method=${encodeURIComponent(method)}`}
+                    aria-current={transferMethod === method ? 'true' : undefined}
                     aria-label={`${method}, ${description}`}
-                    onClick={() => {
-                      setTransferMethod(method)
-                      setAction('transfer')
-                    }}
                   >
                     <span className="dashboard-transfer-method-icon"><Icon size={25} strokeWidth={1.8} /></span>
                     <span className="dashboard-transfer-method-name">{method}</span>
                     <span className="dashboard-transfer-method-description">{description}</span>
-                  </button>
+                  </Link>
                   )
                 })}
               </div>
@@ -871,8 +684,8 @@ export default function DashboardPage() {
                 <section className="dashboard-panel" aria-label="Account balances">
                   <AccountList accounts={accounts} getBalance={getAccountBalance} currencyCode={user.currencyCode} showBalances={showBalances} />
                   <div className="dashboard-account-page-actions">
-                    <button className="button button-dark" type="button" onClick={() => setAction('deposit')}><ArrowDownToLine size={17} /> Deposit</button>
-                    <button className="button button-orange" type="button" onClick={() => setAction('transfer')}><Send size={17} /> Transfer</button>
+                    <Link className="button button-dark" to="/dashboard/deposit"><ArrowDownToLine size={17} /> Deposit</Link>
+                    <Link className="button button-orange" to={`/dashboard/transfer?method=${encodeURIComponent(transferMethod)}`}><Send size={17} /> Transfer</Link>
                   </div>
                 </section>
               </>
@@ -924,14 +737,6 @@ export default function DashboardPage() {
           </section>
         </div>
       </div>
-      <DashboardActionDialog
-        action={action}
-        currencyCode={user.currencyCode}
-        transferMethod={transferMethod}
-        onTransferMethodChange={setTransferMethod}
-        onClose={() => setAction(null)}
-        onTransaction={recordTransaction}
-      />
     </main>
   )
 }
